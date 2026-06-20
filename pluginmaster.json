@@ -14,8 +14,8 @@
     "RepoUrl": "https://github.com/sucying/LastFmHonorific",
     "IconUrl": "https://raw.githubusercontent.com/sucying/LastFmHonorific/master/images/icon.png",
     "ApplicableVersion": "any",
-    "AssemblyVersion": "1.0.0.0",
-    "TestingAssemblyVersion": "1.0.0.0",
+    "AssemblyVersion": "1.0.1.0",
+    "TestingAssemblyVersion": "1.0.1.0",
     "DownloadLinkInstall": "https://github.com/sucying/LastFmHonorific/releases/latest/download/LastFmHonorific.zip",
     "DownloadLinkUpdate": "https://github.com/sucying/LastFmHonorific/releases/latest/download/LastFmHonorific.zip",
     "DownloadLinkTesting": "https://github.com/sucying/LastFmHonorific/releases/latest/download/LastFmHonorific.zip"
