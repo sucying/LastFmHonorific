@@ -1,0 +1,23 @@
+[
+  {
+    "Author": "REPLACE_WITH_YOUR_NAME",
+    "Name": "LastFmHonorific",
+    "InternalName": "LastFmHonorific",
+    "Punchline": "Your Last.fm now-playing track as an honorific",
+    "Description": "Update honorific title based on your currently playing Last.fm track (works with anything that scrobbles, e.g. YouTube Music, Spotify, foobar2000). Adapted from SpotifyHonorific by Valiice (AGPL-3.0).",
+    "Tags": [
+      "lastfm",
+      "activity",
+      "honorific",
+      "music"
+    ],
+    "RepoUrl": "https://github.com/REPLACE_WITH_YOUR_GITHUB_USERNAME/LastFmHonorific",
+    "IconUrl": "https://raw.githubusercontent.com/REPLACE_WITH_YOUR_GITHUB_USERNAME/LastFmHonorific/master/images/icon.png",
+    "ApplicableVersion": "any",
+    "AssemblyVersion": "1.0.0.0",
+    "TestingAssemblyVersion": "1.0.0.0",
+    "DownloadLinkInstall": "https://github.com/REPLACE_WITH_YOUR_GITHUB_USERNAME/LastFmHonorific/releases/latest/download/LastFmHonorific.zip",
+    "DownloadLinkUpdate": "https://github.com/REPLACE_WITH_YOUR_GITHUB_USERNAME/LastFmHonorific/releases/latest/download/LastFmHonorific.zip",
+    "DownloadLinkTesting": "https://github.com/REPLACE_WITH_YOUR_GITHUB_USERNAME/LastFmHonorific/releases/latest/download/LastFmHonorific.zip"
+  }
+]
