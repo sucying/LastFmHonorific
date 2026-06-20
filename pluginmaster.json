@@ -1,6 +1,6 @@
 [
   {
-    "Author": "REPLACE_WITH_YOUR_NAME",
+    "Author": "sucying",
     "Name": "LastFmHonorific",
     "InternalName": "LastFmHonorific",
     "Punchline": "Your Last.fm now-playing track as an honorific",
@@ -11,13 +11,13 @@
       "honorific",
       "music"
     ],
-    "RepoUrl": "https://github.com/REPLACE_WITH_YOUR_GITHUB_USERNAME/LastFmHonorific",
-    "IconUrl": "https://raw.githubusercontent.com/REPLACE_WITH_YOUR_GITHUB_USERNAME/LastFmHonorific/master/images/icon.png",
+    "RepoUrl": "https://github.com/sucying/LastFmHonorific",
+    "IconUrl": "https://raw.githubusercontent.com/sucying/LastFmHonorific/master/images/icon.png",
     "ApplicableVersion": "any",
     "AssemblyVersion": "1.0.0.0",
     "TestingAssemblyVersion": "1.0.0.0",
-    "DownloadLinkInstall": "https://github.com/REPLACE_WITH_YOUR_GITHUB_USERNAME/LastFmHonorific/releases/latest/download/LastFmHonorific.zip",
-    "DownloadLinkUpdate": "https://github.com/REPLACE_WITH_YOUR_GITHUB_USERNAME/LastFmHonorific/releases/latest/download/LastFmHonorific.zip",
-    "DownloadLinkTesting": "https://github.com/REPLACE_WITH_YOUR_GITHUB_USERNAME/LastFmHonorific/releases/latest/download/LastFmHonorific.zip"
+    "DownloadLinkInstall": "https://github.com/sucying/LastFmHonorific/releases/latest/download/LastFmHonorific.zip",
+    "DownloadLinkUpdate": "https://github.com/sucying/LastFmHonorific/releases/latest/download/LastFmHonorific.zip",
+    "DownloadLinkTesting": "https://github.com/sucying/LastFmHonorific/releases/latest/download/LastFmHonorific.zip"
   }
 ]
