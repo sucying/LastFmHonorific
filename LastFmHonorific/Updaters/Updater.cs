@@ -1,0 +1,351 @@
+using Dalamud.Interface.ImGuiNotification;
+using Dalamud.Plugin;
+using Dalamud.Plugin.Ipc;
+using Dalamud.Plugin.Services;
+using LastFmHonorific.Activities;
+using LastFmHonorific.Core;
+using LastFmHonorific.Utils;
+using System;
+using System.Collections.Generic;
+using System.Threading.Tasks;
+
+namespace LastFmHonorific.Updaters;
+
+public class Updater : IDisposable
+{
+    private const double POLLING_INTERVAL_SECONDS = 2.0;
+    private const double AUTH_NOTIFICATION_COOLDOWN_SECONDS = 600.0;
+    private const uint AFK_ONLINE_STATUS_ID = 17;
+    private const double AFK_MUSIC_GRACE_SECONDS = 10.0;
+
+    private readonly IChatGui _chatGui;
+    private readonly Config _config;
+    private readonly IFramework _framework;
+    private readonly IPluginLog _pluginLog;
+    private readonly INotificationManager _notificationManager;
+    private readonly ICallGateSubscriber<int, string, object> _setCharacterTitleSubscriber;
+    private readonly ICallGateSubscriber<int, object> _clearCharacterTitleSubscriber;
+
+    private readonly LastFmPollingService _pollingService;
+    private readonly TitleRenderingService _renderingService;
+    private readonly TemplateCache _templateCache;
+
+    public bool IsPlayerAfk { get; private set; }
+
+    private readonly TitleUpdateState _titleState = new();
+    private readonly PlaybackState _playbackState;
+    private readonly UpdaterContext _updaterContext = new();
+    private readonly IClientState _clientState;
+    private readonly IObjectTable _objectTable;
+
+    private double _pollingTimer;
+    private bool _isPolling;
+    private bool _isMusicPlaying;
+    private string? _currentTrackId;
+    private bool _hasLoggedAfk;
+    private double _authNotificationTimer;
+    private double _musicOffSeconds;
+
+    private readonly HashSet<string> _tracksPlayedToday = new(100);
+    private readonly DateTime _sessionStartTime;
+
+    public Updater(IChatGui chatGui, Config config, IFramework framework, IDalamudPluginInterface pluginInterface, IPluginLog pluginLog, IClientState clientState, IObjectTable objectTable, PlaybackState playbackState, INotificationManager notificationManager)
+    {
+        _chatGui = chatGui;
+        _config = config;
+        _framework = framework;
+        _pluginLog = pluginLog;
+        _clientState = clientState;
+        _objectTable = objectTable;
+        _playbackState = playbackState;
+        _notificationManager = notificationManager;
+
+        _setCharacterTitleSubscriber = pluginInterface.GetIpcSubscriber<int, string, object>("Honorific.SetCharacterTitle");
+        _clearCharacterTitleSubscriber = pluginInterface.GetIpcSubscriber<int, object>("Honorific.ClearCharacterTitle");
+
+        _templateCache = new TemplateCache(pluginLog);
+        _pollingService = new LastFmPollingService(config, pluginLog, chatGui);
+        _renderingService = new TitleRenderingService(_templateCache, pluginLog, chatGui);
+
+        _framework.Update += OnFrameworkUpdate;
+        _clientState.TerritoryChanged += OnTerritoryChanged;
+        _sessionStartTime = DateTime.Now;
+    }
+
+    public string GetPerformanceStats()
+    {
+        var sessionDuration = DateTime.Now - _sessionStartTime;
+
+        return $"""
+            === LastFmHonorific Performance Stats ===
+            Session Duration: {sessionDuration:hh\:mm\:ss}
+
+            API Statistics:
+            • Total API calls: {_pollingService.ApiCallCount}
+            • API errors: {_pollingService.ApiErrorCount}
+            • Average response time: {_pollingService.AverageResponseTime:F0}ms
+
+            Template Cache:
+            • Cache hits: {_templateCache.CacheHits}
+            • Cache misses: {_templateCache.CacheMisses}
+            • Hit rate: {_templateCache.HitRate:F1}%
+            • Cached templates: {_templateCache.CachedTemplateCount}
+
+            Music:
+            • Unique tracks today: {_tracksPlayedToday.Count}
+            • Currently playing: {(_isMusicPlaying ? "Yes" : "No")}
+            • Player AFK: {(IsPlayerAfk ? "Yes" : "No")}
+            """;
+    }
+
+    public void Dispose()
+    {
+        _framework.Update -= OnFrameworkUpdate;
+        _clientState.TerritoryChanged -= OnTerritoryChanged;
+        _framework.RunOnFrameworkThread(() =>
+        {
+            _clearCharacterTitleSubscriber.InvokeAction(0);
+        });
+        _pollingService.Dispose();
+        GC.SuppressFinalize(this);
+    }
+
+    private void OnTerritoryChanged(uint territoryId)
+    {
+        _titleState.ForceResend();
+    }
+
+    private void OnFrameworkUpdate(IFramework framework)
+    {
+        var deltaSeconds = framework.UpdateDelta.TotalSeconds;
+        UpdateMusicOffTimer(deltaSeconds);
+
+        if (HandleAfkStatus()) return;
+
+        ProcessTitleUpdate(deltaSeconds);
+        HandlePolling(deltaSeconds);
+    }
+
+    private void UpdateMusicOffTimer(double deltaSeconds)
+    {
+        _musicOffSeconds = _isMusicPlaying ? 0.0 : _musicOffSeconds + deltaSeconds;
+    }
+
+    private bool HandleAfkStatus()
+    {
+        IsPlayerAfk = IsLocalPlayerAfk();
+
+        if (ShouldPauseForAfk())
+        {
+            EngageAfkPause();
+            return true;
+        }
+
+        _hasLoggedAfk = false;
+        return false;
+    }
+
+    private bool IsLocalPlayerAfk()
+        => _objectTable.LocalPlayer?.OnlineStatus.RowId == AFK_ONLINE_STATUS_ID;
+
+    private bool ShouldPauseForAfk()
+        => IsPlayerAfk && !_isMusicPlaying && _musicOffSeconds > AFK_MUSIC_GRACE_SECONDS;
+
+    private void EngageAfkPause()
+    {
+        if (!_hasLoggedAfk)
+        {
+            _pluginLog.Debug("Player is AFK and no music is playing, stopping polling.");
+            _hasLoggedAfk = true;
+        }
+        ClearTitle();
+        _pollingTimer = 0.0;
+    }
+
+    private void ProcessTitleUpdate(double deltaSeconds)
+    {
+        if (_titleState.UpdateAction == null) return;
+
+        _updaterContext.SecsElapsed += deltaSeconds;
+        try
+        {
+            _titleState.UpdateAction();
+        }
+        catch (Exception e)
+        {
+            _pluginLog.Error(e, "Failed to update title");
+            _chatGui.PrintError($"LastFmHonorific: Failed to update title. Check /xllog for details.");
+            _titleState.Clear();
+        }
+    }
+
+    private void HandlePolling(double deltaSeconds)
+    {
+        if (!_config.Enabled)
+        {
+            if (_titleState.LastSentJson != null)
+            {
+                ClearTitle();
+            }
+            _authNotificationTimer = 0;
+            return;
+        }
+
+        _pollingTimer += deltaSeconds;
+
+        if (!_config.HasLastFmCredentials())
+        {
+            ShowAuthNotificationIfDue(deltaSeconds);
+            return;
+        }
+
+        _authNotificationTimer = 0;
+
+        if (_pollingTimer < POLLING_INTERVAL_SECONDS || _isPolling)
+        {
+            return;
+        }
+
+        if (_config.EnableDebugLogging)
+        {
+            _pluginLog.Debug($"POLLING NOW. Timer: {_pollingTimer:F2}/{POLLING_INTERVAL_SECONDS}s | IsPlaying: {_isMusicPlaying}");
+        }
+
+        _pollingTimer = 0.0;
+        _ = PollLastFmAsync();
+    }
+
+    private async Task PollLastFmAsync()
+    {
+        if (_isPolling) return;
+        _isPolling = true;
+
+        try
+        {
+            var track = await _pollingService.GetCurrentlyPlayingTrackAsync().ConfigureAwait(false);
+            await _framework.RunOnFrameworkThread(() => ProcessPollResult(track)).ConfigureAwait(false);
+        }
+        finally
+        {
+            _isPolling = false;
+        }
+    }
+
+    private void ProcessPollResult(LastFmTrack? track)
+    {
+        _playbackState.CurrentTrack = track;
+
+        if (track != null)
+        {
+            _isMusicPlaying = true;
+            _tracksPlayedToday.Add(track.Id);
+            ProcessCurrentlyPlayingTrack(track);
+        }
+        else
+        {
+            _isMusicPlaying = false;
+            _currentTrackId = null;
+            ClearTitle();
+        }
+    }
+
+    internal static bool ShouldSkipTrackProcessing(string? currentTrackId, string newTrackId, Action? updateTitle)
+        => currentTrackId == newTrackId && updateTitle != null;
+
+    private void ProcessCurrentlyPlayingTrack(LastFmTrack track)
+    {
+        if (ShouldSkipTrackProcessing(_currentTrackId, track.Id, _titleState.UpdateAction))
+        {
+            return;
+        }
+
+        _currentTrackId = track.Id;
+
+        var activityConfig = _config.WithLock(() =>
+            ValidationHelper.FindActiveConfig(_config.ActivityConfigs, _config.ActiveConfigName));
+
+        if (activityConfig == null)
+        {
+            ClearTitle();
+            return;
+        }
+
+        _updaterContext.SecsElapsed = 0;
+        _titleState.UpdateAction = CreateTitleUpdateAction(activityConfig, track);
+    }
+
+    private Action CreateTitleUpdateAction(ActivityConfig activityConfig, LastFmTrack track)
+    {
+        return () =>
+        {
+            if (!_config.Enabled)
+            {
+                ClearTitle();
+                return;
+            }
+
+            RenderAndSetTitle(activityConfig, track);
+        };
+    }
+
+    private void RenderAndSetTitle(ActivityConfig activityConfig, LastFmTrack track)
+    {
+        var title = _renderingService.RenderTitle(activityConfig, track, _updaterContext);
+        if (title == null) return;
+
+        var serializedData = _renderingService.SerializeTitleData(title, activityConfig, _updaterContext, _config.IsHonorificSupporter);
+        if (!_titleState.ShouldSend(serializedData)) return;
+
+        if (_config.EnableDebugLogging)
+        {
+            _pluginLog.Debug($"Call Honorific SetCharacterTitle IPC with:\n{serializedData}");
+        }
+
+        _setCharacterTitleSubscriber.InvokeAction(0, serializedData);
+        _titleState.LastSentJson = serializedData;
+    }
+
+    internal static (bool ShouldNotify, double NewTimer) CheckAuthNotificationDue(
+        double currentTimer, double deltaSeconds, double cooldownSeconds, bool notificationsEnabled)
+    {
+        if (!notificationsEnabled)
+            return (false, currentTimer);
+
+        var newTimer = currentTimer + deltaSeconds;
+        if (newTimer < cooldownSeconds)
+            return (false, newTimer);
+
+        return (true, 0);
+    }
+
+    private void ShowAuthNotificationIfDue(double deltaSeconds)
+    {
+        var (shouldNotify, newTimer) = CheckAuthNotificationDue(
+            _authNotificationTimer, deltaSeconds, AUTH_NOTIFICATION_COOLDOWN_SECONDS, _config.EnableNotifications);
+
+        _authNotificationTimer = newTimer;
+        if (!shouldNotify) return;
+
+        _notificationManager.AddNotification(new Notification
+        {
+            Title = "LastFmHonorific",
+            Content = "Last.fm username/API key required. Use /lastfmhonorific config to set up.",
+            Type = NotificationType.Warning,
+            Minimized = false,
+        });
+    }
+
+    private void ClearTitle()
+    {
+        if (_titleState.LastSentJson == null) return;
+
+        _pluginLog.Debug("Call Honorific ClearCharacterTitle IPC");
+        _framework.RunOnFrameworkThread(() =>
+        {
+            _clearCharacterTitleSubscriber.InvokeAction(0);
+        });
+        _updaterContext.SecsElapsed = 0;
+        _titleState.Clear();
+        _currentTrackId = null;
+    }
+}
