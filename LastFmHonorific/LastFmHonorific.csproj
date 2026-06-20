@@ -3,7 +3,7 @@
     <PropertyGroup>
         <Version>1.0.0</Version>
         <Description>Update honorific title based on Last.fm "now playing" activity</Description>
-        <PackageProjectUrl>https://github.com/REPLACE_WITH_YOUR_GITHUB_USERNAME/LastFmHonorific</PackageProjectUrl>
+        <PackageProjectUrl>https://github.com/sucying/LastFmHonorific</PackageProjectUrl>
         <PackageLicenseExpression>AGPL-3.0-or-later</PackageLicenseExpression>
         <IsPackable>false</IsPackable>
         <TargetFramework>net10.0-windows</TargetFramework>
