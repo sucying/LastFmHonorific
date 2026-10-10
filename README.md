@@ -6,7 +6,7 @@ que está tocando no seu perfil do **Last.fm**.
 ## Proveniência e créditos
 
 A adaptação foi feita **INTEIRAMENTE** com ajuda de um assistente de IA (Claude, da Anthropic),
-a partir do código-fonte público do SpotifyHonorific.
+a partir do código-fonte público do SpotifyHonorific. Feito totalmente para uso pessoal.
 
 Por causa disso, este projeto é distribuído sob a mesma licença do original,
 **GNU AGPL-3.0**, que exige que qualquer trabalho derivado mantenha a mesma licença e dê crédito ao trabalho original.
